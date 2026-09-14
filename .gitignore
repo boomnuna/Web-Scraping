@@ -1,3 +1,4 @@
 webscraping_env/
 BACKUP/
 code/removed_dataset/
+__pycache__/
