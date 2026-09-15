@@ -1,6 +1,7 @@
 webscraping_env/
 BACKUP/
 code/removed_dataset/
-code/removed_dataset/
+code/raw_dataset/
+code/clean_dataset
 __pycache__/
 
