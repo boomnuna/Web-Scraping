@@ -1,52 +1,97 @@
 """
 scrape_images.py
 
-Collects raw candidate images per class for the Iron Man armor (MCU)
-fine-grained classification project — War Machine, Mark III, Mark VI,
-Mark L, Mark LXXXV, Hulkbuster.
+Collects raw candidate images per class for the One Piece "Devil Fruits"
+fine-grained classification project — Gomu Gomu no Mi, Mera Mera no Mi,
+Ope Ope no Mi, Yami Yami no Mi.
 
-WHY THIS VERSION IS DIFFERENT (read this first):
-  The original version of this script used `icrawler`'s GoogleImageCrawler
-  and BingImageCrawler. Both are broken as of testing:
-    - GoogleImageCrawler crashes outright (`TypeError: 'NoneType' object
-      is not iterable`) — this is a long-standing, unfixed bug going back
-      to 2021 in the icrawler GitHub repo. Google now serves a
-      JavaScript-only page to plain HTTP requests, so no HTML-scraping
-      crawler can read it anymore without a real browser.
-    - BingImageCrawler "ran" without crashing but returned completely
-      unrelated images (random product photos, unrelated wallpapers) —
-      its page parser is also out of date against Bing's current layout.
+WHY better_bing_image_downloader (not icrawler):
+  icrawler's GoogleImageCrawler and BingImageCrawler are both broken as
+  of testing — Google crashes outright (JS-only page, no crawler can
+  read it without a real browser), and Bing's crawler runs without
+  crashing but returns unrelated images because its HTML parser is out
+  of date against Bing's current layout.
 
-  This version uses `better_bing_image_downloader` instead, an actively
-  maintained package (last updated June 2026) built specifically for ML
-  dataset collection. It hits Bing's JSON API directly instead of
-  scraping rendered HTML, which is why it still works.
+  This script uses `better_bing_image_downloader` instead — actively
+  maintained, hits Bing's JSON API directly instead of scraping rendered
+  HTML. Bing is used as the ONLY engine; it already yields near-full
+  results on its own (often 85-90+ out of a 90+ limit per query).
 
-  Bing is used as the ONLY engine here. It already yields near-full
-  results on its own (often 85-90+ out of a 90 limit per query), and a
-  DuckDuckGo pass was tried and dropped — it kept getting HTTP 403
-  (rate-limited/blocked) and wasn't worth the added complexity for the
-  extra images it wasn't reliably providing anyway.
+*** READ THIS BEFORE RUNNING — THE #1 RISK FOR THIS DATASET ***
+  This project classifies the FRUITS THEMSELVES — the swirled, spiky
+  orb/fruit object shown in a jar, in someone's hand, or on a plate
+  right before it's eaten — NOT the character using the resulting
+  power. A screenshot of Luffy stretching his arm is NOT a Gomu Gomu
+  no Mi image; it doesn't show the fruit at all. Mixing "power in use"
+  screenshots into these folders defeats the whole point of the project
+  and WILL need to be manually removed, so it's worth being deliberate
+  about query wording now rather than cleaning it up later.
 
-WHY THIS SET IS TRICKY (unchanged from before):
-  - Mark III and Mark VI are both red/gold "plated" armor — the model has
-    to pick up on subtle plating/reactor differences, not just color.
-  - Mark L and Mark LXXXV are both red/gold NANOTECH armor (smooth, no
-    visible plate seams) — even harder to tell apart than III vs VI.
-  - Hulkbuster has TWO visually different movie versions (Age of Ultron
-    "Mark XLIV" vs Infinity War "Veronica"). Queries below target the
-    Age of Ultron version specifically.
-  - War Machine has THREE color schemes across films (classic gunmetal
-    grey/black, and a red-white-blue "Iron Patriot" repaint in Iron Man 3).
-    Queries below target the classic Avengers/Infinity War grey-black
-    version specifically.
+  Every query below is phrased to bias toward "the fruit object" (e.g.
+  "devil fruit design", "fruit prop", "close up fruit"), but Bing's
+  image search still cannot perfectly separate "fruit" from "power" —
+  expect a real amount of manual filtering regardless of query wording.
+
+WHY THIS SET IS TRICKY (harder than Iron Man armor or Luffy's Gears):
+  - Unlike Luffy's Gears (1000+ episodes of footage) or Iron Man suits
+    (major theatrical releases), each devil fruit's canon appearance AS
+    A FRUIT is shown on-screen only a handful of times total across the
+    whole series (usually just the "eating" flashback/scene). The bulk
+    of what queries will surface is necessarily fan art, wiki reference
+    renders, and merchandise/replica photos — NOT anime screenshots.
+    Budget more time for manual review than either of those two prior
+    projects, and don't be surprised if raw per-class counts end up
+    lower even after adding more query variety.
+  - Fan art of the same fruit tends to converge on the same wiki/official
+    reference image as its source, so NEAR-DUPLICATE risk is higher
+    here than in the character/armor/gear projects — lean harder on
+    dedupe_and_clean.py's near-duplicate flagging step for this dataset.
+  - The added "figure"/レプリカ (merchandise) queries pull from Japanese
+    figure/toy retail sites (AmiAmi, Mandarake, etc.) — a different
+    source pool than the English wiki/fan-art queries, which should
+    raise the raw candidate count. But product photos get re-hosted
+    near-identically across multiple retailer/reseller listings (same
+    studio background, same angle, just re-cropped), so expect EVEN
+    MORE near-duplicates from these queries specifically. Also watch
+    for figures taking artistic liberties with color (chibi/keychain
+    versions especially) — since color is the main discriminative cue
+    here, a mis-colored figure photo can quietly contaminate a class.
+  - Devil fruits share a common visual "template" (round fruit body +
+    spiral/swirl pattern + stem leaves) — the four below were chosen
+    specifically because they differ in COLOR, which is the main cue
+    that will actually separate them:
+      gomu_gomu: red/pink round fruit with dark swirls
+      mera_mera: orange/red fruit, flame-associated color scheme
+      ope_ope:   blue/purple fruit with heart-shaped swirl pattern
+      yami_yami: black/dark purple fruit — the clearest outlier by color
+    If ColorJitter augmentation is used heavily during training, revisit
+    that choice for this dataset — color is doing more of the
+    classification work here than it did for the armor or gear projects.
+  - Manga (black-and-white) results will slip into searches sometimes —
+    decide upfront whether you want a color-only dataset (recommended,
+    since color is the primary discriminative cue here) and filter
+    those out during manual review.
+  - Official "canon" fruit designs occasionally get redrawn slightly
+    between manga, anime, and games (Pirate Warriors, etc.) — minor
+    version differences are expected and fine to keep; they're not the
+    same problem as the power-vs-fruit mixup above.
 
 IMPORTANT — this script only DOWNLOADS CANDIDATES. You must still:
-  1. Manually review and delete bad/irrelevant/duplicate images
-  2. Pay extra attention to the two fine-grained pairs when reviewing:
-     Mark III vs Mark VI, and Mark L vs Mark LXXXV
-  3. Keep a record of what search terms/sources you used per class,
+  1. Manually review EVERY image — for this dataset specifically, the
+     primary thing you're checking for is "is this actually a picture
+     of the fruit itself, or did a power-in-use / character image slip
+     through" (see warning above), not just relevance in general
+  2. Decide on and enforce a manga-vs-anime-vs-fanart-vs-merch policy
+     consistently across all four classes, not just some
+  3. Run dedupe_and_clean.py afterward and pay close attention to the
+     near-duplicate flags — expect more near-duplicates here than in
+     prior scrapes, since fan art commonly copies the same reference image
+  4. Keep a record of what search terms/sources you used per class,
      for the "Dataset description" section of your presentation
+  5. If any class ends up noticeably smaller than the rest after
+     cleaning (likely, given how little canon fruit footage exists),
+     prioritize adding to it specifically rather than adding equally
+     to every class
 
 INSTALL:
     pip install better-bing-image-downloader
@@ -61,66 +106,57 @@ from better_bing_image_downloader import downloader
 
 # ---- EDIT THIS: one or more search queries per class ----
 CLASSES = {
-    "mark3": [
-        "Iron Man Mark 3 armor",
-        "Iron Man Mark III suit movie",
-        "Tony Stark Mark 3 red gold armor",
-        "Iron Man Mark 3 action figure",
-        "Iron Man 2008 armor screenshot",
-        "Iron Man Mark 3 close up helmet",
-        "Iron Man Mark 3 side view armor",
+    "gomu_gomu": [
+        "Gomu Gomu no Mi devil fruit design",
+        "Gomu Gomu no Mi fruit One Piece close up",
+        "Luffy devil fruit before eating anime",
+        "Gomu Gomu no Mi fruit prop replica",
+        "Gomu Gomu no Mi fruit wiki reference art",
+        "One Piece rubber fruit swirl pattern red",
+        "Gomu Gomu no Mi devil fruit figure",
+        "ゴムゴムの実 フィギュア",
+        "Gomu Gomu devil fruit replica",
     ],
-    "mark6": [
-        "Iron Man Mark 6 armor Avengers",
-        "Iron Man Mark VI suit",
-        "Tony Stark Mark 6 triangle arc reactor",
-        "Iron Man Mark 6 action figure",
-        "The Avengers 2012 Iron Man armor",
-        "Iron Man Mark 6 close up helmet",
-        "Iron Man Mark 6 side view armor",
+    "mera_mera": [
+        "Mera Mera no Mi devil fruit design",
+        "Mera Mera no Mi fruit One Piece close up",
+        "Ace devil fruit before eating anime",
+        "Mera Mera no Mi fruit prop replica",
+        "Mera Mera no Mi fruit wiki reference art",
+        "One Piece flame fruit swirl pattern orange",
+        "Mera Mera no Mi devil fruit figure",
+        "メラメラの実 フィギュア",
+        "Mera Mera devil fruit replica",
     ],
-    "mark50": [
-        "Iron Man Mark 50 nanotech armor",
-        "Iron Man Mark L Infinity War suit",
-        "Tony Stark nanotech suit Infinity War",
-        "Iron Man Mark 50 action figure",
-        "Avengers Infinity War Iron Man armor screenshot",
-        "Iron Man Mark 50 close up helmet",
-        "Iron Man Mark 50 side view armor",
+    "ope_ope": [
+        "Ope Ope no Mi devil fruit design",
+        "Ope Ope no Mi fruit One Piece close up",
+        "Law devil fruit before eating anime",
+        "Ope Ope no Mi fruit prop replica",
+        "Ope Ope no Mi fruit wiki reference art",
+        "One Piece heart fruit swirl pattern blue",
+        "Ope Ope no Mi devil fruit figure",
+        "オペオペの実 フィギュア",
+        "Ope Ope devil fruit replica",
     ],
-    "mark85": [
-        "Iron Man Mark 85 armor Endgame",
-        "Iron Man Mark LXXXV suit",
-        "Tony Stark final armor Endgame",
-        "Iron Man Mark 85 action figure",
-        "Avengers Endgame Iron Man armor screenshot",
-        "Iron Man Mark 85 close up helmet",
-        "Iron Man Mark 85 side view armor",
-    ],
-    "hulkbuster": [
-        "Hulkbuster Mark 44 Age of Ultron",
-        "Iron Man Hulkbuster armor Age of Ultron movie",
-        "Hulkbuster suit Tony Stark Avengers 2",
-        "Hulkbuster Mark 44 action figure",
-        "Avengers Age of Ultron Hulkbuster screenshot",
-        "Hulkbuster Mark 44 close up helmet",
-        "Hulkbuster Mark 44 full body armor",
-    ],
-    "war_machine": [
-        "War Machine armor Avengers Infinity War",
-        "War Machine suit grey black Avengers",
-        "James Rhodes War Machine armor movie",
-        "War Machine action figure grey armor",
-        "Avengers War Machine screenshot",
-        "War Machine close up helmet",
-        "War Machine side view armor",
+    "yami_yami": [
+        "Yami Yami no Mi devil fruit design",
+        "Yami Yami no Mi fruit One Piece close up",
+        "Blackbeard devil fruit before eating anime",
+        "Yami Yami no Mi fruit prop replica",
+        "Yami Yami no Mi fruit wiki reference art",
+        "One Piece darkness fruit swirl pattern black",
+        "Yami Yami no Mi devil fruit figure",
+        "ヤミヤミの実 フィギュア",
+        "Yami Yami devil fruit replica",
     ],
 }
 
-# Raised from 90 -> 130 to increase the raw pool per class. Bing has been
-# yielding near-full results in testing (often 95%+ of the limit), so
-# this is a fairly direct increase in final dataset size, not just a
-# theoretical ceiling.
+# Raised from a smaller default -> 130 to increase the raw pool per class.
+# Bing has been yielding near-full results in testing (often 95%+ of the
+# limit) for the character/armor/gear projects, but expect LOWER yield
+# here specifically — canon "fruit object" images are much rarer than
+# character or armor images, so a higher ceiling matters more this time.
 IMAGES_PER_QUERY = 130           # per query
 OUTPUT_ROOT = "raw_dataset"      # final images land in raw_dataset/<class_name>/
 TEMP_ROOT = "_bbid_tmp"          # scratch space, cleaned up as we go
@@ -190,17 +226,21 @@ def main():
         print(f"  {class_name}: {count}")
 
     print("\nNEXT STEPS (do not skip these):")
-    print("  1. Run dedupe_and_clean.py to remove exact/near duplicates")
-    print("  2. Manually eyeball each class folder and delete irrelevant images")
-    print("     (be extra careful with mark3/mark6 getting mixed up, and")
-    print("      mark50/mark85 getting mixed up — they're the fine-grained")
-    print("      pairs this whole project is testing)")
-    print("  3. Double-check hulkbuster folder has no Infinity War 'Veronica'")
-    print("     version images, and war_machine has no Iron Patriot")
-    print("     red-white-blue images")
+    print("  1. Manually review every image — the #1 thing to check is")
+    print("     whether it actually shows the FRUIT ITSELF, not a")
+    print("     character using the resulting power (a stretched arm,")
+    print("     a flame attack, a black-goo attack, etc. is NOT a valid")
+    print("     image for this project no matter how relevant it looks)")
+    print("  2. Run dedupe_and_clean.py to remove exact/near duplicates")
+    print("     — expect MORE near-duplicate flags here than in a")
+    print("     character/armor dataset, since fan art of the same fruit")
+    print("     commonly copies the same wiki/official reference image")
+    print("  3. Decide on a manga-vs-anime-vs-fanart-vs-merch policy and")
+    print("     apply it consistently across all FOUR classes, not just some")
     print("  4. If any class ends up noticeably smaller than the rest after")
-    print("     cleaning, prioritize adding to it specifically rather than")
-    print("     adding equally to every class")
+    print("     cleaning (expected, since canon fruit footage is scarce),")
+    print("     prioritize adding to it specifically rather than adding")
+    print("     equally to every class")
 
 
 if __name__ == "__main__":
